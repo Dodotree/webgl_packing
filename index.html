@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+        img {
+            display: block;
+            max-width: 200px;
+            max-height: 200px;
+            margin: 10px;
+        }
+    </style>
+    <script type="module" src='index.js'></script>
+</head>
+  <body onload="init()">
+
+    <img id="img4" src="Atest.gif"/>
+
+    <input type="file" id="uploader" onchange="getInputFile(event)" multiple>
+
+    <button id="read" onclick="init()">Read</button>
+
+
+    <!-- Vertex shader program -->
+    <script id="shader-vs" type="x-shader/x-vertex">
+        #version 300 es
+        in vec4 a_position;
+        out vec2 v_texCoord;
+        void main() {
+            gl_Position = a_position;
+            // Calculate texture coordinates from position
+            // Convert from range -1,1 to 0,1
+            v_texCoord = vec2(
+                (a_position.x + 1.0) / 2.0,          // Convert X from -1..1 to 0..1
+                1.0 - (a_position.y + 1.0) / 2.0     // Convert Y from -1..1 to 1..0 (flipped vertically)
+            );
+        }
+    </script>
+
+    <!-- Fragment shader program -->
+    <script id="shader-fs" type="x-shader/x-fragment">
+        #version 300 es
+        // precision mediump float;
+        precision highp float;
+        uniform sampler2D u_texture;
+        // in vec2 v_texCoord; // interpolated
+        layout(location = 0) out vec4 outColor;
+        layout(location = 1) out vec4 fragCoord;
+
+        int iwidth = 8; // width of the pixel block, packed into 8 bits
+        int iheight = 4; // height of the pixel block, packed into RGBA channels
+        vec4 bytes = vec4(0.0, 0.0, 0.0, 0.0);
+
+        void main() {
+
+            // gl_FragCoord gives exact pixel coordinates in window space, not interpolated
+            // in the middle of the pixel (0.5, 0.5) for pixel (0, 0)
+            ivec2 xy = ivec2((gl_FragCoord.xy - 0.5) * 2.0);
+            for (int j = 0; j < iheight; j++) {
+                uint byteValue = uint(0);
+                for(int i = 0; i < iwidth; i++) {
+                    float normCol = texelFetch(u_texture, xy + ivec2(i,j), 0).r;
+                    if (normCol > 0.5) {
+                        byteValue =  byteValue | (uint(1) << uint(i));
+                    }
+                }
+                bytes[j] = float(byteValue) / 255.0; // normalize to [0, 1] range
+            }
+            outColor = bytes;
+            fragCoord = gl_FragCoord;
+        }
+    </script>
+
+    <!-- Fragment shader program -->
+    <script id="shader-fs-plain" type="x-shader/x-fragment">
+        #version 300 es
+        // precision mediump float;
+        precision highp float;
+        uniform sampler2D u_texture;
+        out vec4 outColor;
+
+        int iwidth = 8; // width of the pixel block, packed into 8 bits
+        int iheight = 4; // height of the pixel block, packed into RGBA channels
+
+        void main() {
+
+            ivec2 xyOrig = ivec2(gl_FragCoord.xy - 0.5);
+            int dx = xyOrig.x % iwidth;
+            int dy = xyOrig.y % iheight; // to decide index in .rgba array
+            int x = (xyOrig.x - dx) / iwidth;
+            int y = (xyOrig.y - dy) / iheight;
+
+            uint byte = uint( texelFetch(u_texture, ivec2(x,y), 0)[dy] * 255.0 );
+            uint bit = byte & (uint(1) << uint(dx));
+            float val = float(bool(bit));
+            outColor = vec4(val, val, val, 1.0);
+        }
+    </script>
+
+
+    <script>
+
+    // Store preloaded files
+    const fileCache = {};
+
+    // Preload function to be called at startup
+    function preloadFiles(files) {
+        return Promise.all(
+            Object.keys(files).map( fileId =>
+                fetch(files[fileId].url)
+                    .then(response => response.arrayBuffer())
+                    .then(arrayBuffer => {
+                        console.log(`Got ${fileId} with size ${arrayBuffer.byteLength}`);
+                        fileCache[fileId] = new Uint8Array(arrayBuffer);
+                        // Create ProcessingWEBGL with the extracted data
+                        console.log(files);
+                        const ProcessingWEBGL = new Window.ProcessingWEBGL(8,4,32);
+                        // it flips upside down
+                        const pixelData = new Uint8Array([
+                            0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    255, 255, 255, 255,0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,   255, 255, 255, 255,
+                            0, 0, 0, 255,        254, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,      0, 0, 0, 255,        254, 255, 255, 255,  0, 0, 0, 255,         0, 0, 0, 255,
+                            0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    0, 0, 0, 255,      0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    0, 0, 0, 255,
+                            0, 0, 0, 255,        255, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,      0, 0, 0, 255,        255, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,
+                            ]);
+
+                        ProcessingWEBGL.processAndDraw(pixelData);
+                        return fileId;
+                    })
+            )
+        );
+    }
+
+    function init(){
+        // indexing images by id, not by src
+        // since uploaded files does not have src of reasonable size
+        const files = Object.fromEntries([...document.querySelectorAll('img')].map(
+            img => [img.id, { url: img.src, width: img.naturalWidth, height: img.naturalHeight }]));
+        preloadFiles(files).then(() => {
+            console.log("done preloading");
+        });
+    }
+
+    function getInputFile(event) {
+        const file = event.target.files[0];
+        console.log(`Selected file: ${file.name}`);
+
+        if (!file) {
+            console.error("No file selected");
+            return;
+        }
+
+        const blob = new Blob(
+            [file],
+            {"type": file.type} // If the type is unknown, default is empty string.
+        )
+
+        const newId = file.name;
+        file.arrayBuffer().then( arrBuff => {
+                fileCache[newId] = new Uint8Array(arrBuff);
+            })
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.id = newId;
+            document.body.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    </script>
+
+
+
+  </body>
+</html>
