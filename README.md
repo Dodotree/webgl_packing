@@ -16,7 +16,7 @@ This technique bridges the gap between binary image processing algorithms and GP
 
 ## License
 
-[MIT License](LICENSE) or specify your preferred license
+[MIT License](LICENSE)
 
 
 ## Contributing
