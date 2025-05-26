@@ -157,7 +157,7 @@ export class Texture {
   constructor(gl, slot,
       config = {
         source: null,
-        flip: true,
+        flip: false,
         mipmap: false,
         params: {},
         width,
@@ -275,9 +275,9 @@ export class ProcessingWEBGL {
               V3               V2
       */
               a_position: new Float32Array([
-                            -1, -1, // bottom-left
-                            1, -1, // bottom-right
-                            -1,  1, // top-left
+                            0, 0, // bottom-left
+                            1, 0, // bottom-right
+                            0,  1, // top-left
                             1,  1, // top-right
                           ])
           },
@@ -306,7 +306,7 @@ export class ProcessingWEBGL {
       textureOptions = [
         {
           source: null,
-          flip: false,
+          flip: true,
           mipmap: false,
           width, // should take value from above constructor param
           height,
@@ -619,9 +619,6 @@ export class ProcessingWEBGL {
       coordBuffer
     );
 
-    let k = this.w/(this.packW);
-    console.log("pack k ", k, this.packW, this.packH, this.w, this.h);
-
     function printAs4x4Table(arr) {
       for (let i = 0; i < 16; i += 4) {
         console.log(
@@ -635,6 +632,15 @@ export class ProcessingWEBGL {
 
     console.log("readBuffer", readBuffer);
     console.log("coordBuffer", coordBuffer);
+    for(let i=0; i < readBuffer.length; i += 4) {
+         console.log(
+          (coordBuffer[i]-0.5).toString().padStart(3) + ', ' +
+          (coordBuffer[i+1]-0.5).toString().padStart(3) + ' | ' +
+          readBuffer[i].toString().padStart(3) + ', ' +
+          readBuffer[i+1].toString().padStart(3) + ', ' +
+          readBuffer[i+2].toString().padStart(3)
+        );
+    }
   }
 
 

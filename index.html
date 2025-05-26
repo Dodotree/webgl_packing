@@ -25,15 +25,8 @@
     <script id="shader-vs" type="x-shader/x-vertex">
         #version 300 es
         in vec4 a_position;
-        out vec2 v_texCoord;
         void main() {
-            gl_Position = a_position;
-            // Calculate texture coordinates from position
-            // Convert from range -1,1 to 0,1
-            v_texCoord = vec2(
-                (a_position.x + 1.0) / 2.0,          // Convert X from -1..1 to 0..1
-                1.0 - (a_position.y + 1.0) / 2.0     // Convert Y from -1..1 to 1..0 (flipped vertically)
-            );
+            gl_Position = a_position - 0.5;
         }
     </script>
 
@@ -43,7 +36,7 @@
         // precision mediump float;
         precision highp float;
         uniform sampler2D u_texture;
-        // in vec2 v_texCoord; // interpolated
+
         layout(location = 0) out vec4 outColor;
         layout(location = 1) out vec4 fragCoord;
 
@@ -55,7 +48,9 @@
 
             // gl_FragCoord gives exact pixel coordinates in window space, not interpolated
             // in the middle of the pixel (0.5, 0.5) for pixel (0, 0)
-            ivec2 xy = ivec2((gl_FragCoord.xy - 0.5) * 2.0);
+            int x = int(gl_FragCoord.x - 0.5) * 8;
+            int y = int(gl_FragCoord.y - 0.5) * 4;
+            ivec2 xy = ivec2(x, y);
             for (int j = 0; j < iheight; j++) {
                 uint byteValue = uint(0);
                 for(int i = 0; i < iwidth; i++) {
@@ -111,19 +106,20 @@
                     .then(response => response.arrayBuffer())
                     .then(arrayBuffer => {
                         console.log(`Got ${fileId} with size ${arrayBuffer.byteLength}`);
-                        fileCache[fileId] = new Uint8Array(arrayBuffer);
-                        // Create ProcessingWEBGL with the extracted data
-                        console.log(files);
-                        const ProcessingWEBGL = new Window.ProcessingWEBGL(8,4,32);
-                        // it flips upside down
-                        const pixelData = new Uint8Array([
-                            0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    255, 255, 255, 255,0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,   255, 255, 255, 255,
-                            0, 0, 0, 255,        254, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,      0, 0, 0, 255,        254, 255, 255, 255,  0, 0, 0, 255,         0, 0, 0, 255,
-                            0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    0, 0, 0, 255,      0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    0, 0, 0, 255,
-                            0, 0, 0, 255,        255, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,      0, 0, 0, 255,        255, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,
-                            ]);
+                        // fileCache[fileId] = new Uint8Array(arrayBuffer);
+                        const ProcessingWEBGL = new Window.ProcessingWEBGL(files[fileId].width, files[fileId].height, 32);
+                        ProcessingWEBGL.processAndDraw(document.getElementById(fileId));
 
-                        ProcessingWEBGL.processAndDraw(pixelData);
+                        // const ProcessingWEBGL = new Window.ProcessingWEBGL(4,4,32);
+                        // // it flips upside down
+                        // const pixelData = new Uint8Array([
+                        //     0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    255, 255, 255, 255,
+                        //     0, 0, 0, 255,        254, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,
+                        //     0, 0, 0, 255,        0, 0, 0, 255,        255, 255, 255, 255,    0, 0, 0, 255,
+                        //     0, 0, 0, 255,        255, 255, 255, 255,  0, 0, 0, 255,          0, 0, 0, 255,
+                        //     ]);
+                        // ProcessingWEBGL.processAndDraw(pixelData);
+
                         return fileId;
                     })
             )
