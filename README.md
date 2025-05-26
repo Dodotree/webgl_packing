@@ -4,7 +4,7 @@ This repository demonstrates an efficient technique for processing binary (black
 
 The implementation uses WebGL 2.0 and GLSL shaders to perform both the packing and unpacking operations. During the packing phase, the fragment shader analyzes 8×4 blocks of binary pixels from the source image and encodes their values into bit patterns stored in RGBA channels. For unpacking, a separate shader decodes these values back into their original binary representation. Between these operations, the packed representation enables efficient binary operations (like AND, OR, XOR) directly in the shader, making complex pattern recognition or binary morphology operations much faster than traditional pixel-by-pixel processing.
 
-This technique bridges the gap between binary image processing algorithms and GPU acceleration, providing significant benefits for applications like OCR, barcode/QR code scanning, document processing, and medical image analysis. By leveraging WebGL's ubiquitous browser support, these optimizations can be deployed across virtually any modern device without requiring specialized hardware or software installations.
+This technique bridges the gap between binary image processing algorithms and GPU acceleration, providing significant benefits for applications like OCR, barcode/QR code scanning, document processing, and medical image analysis. These optimizations can be deployed across virtually any modern device without requiring specialized hardware or software installations.
 
 ## Project Status Disclaimer
 ⚠️ **PLEASE NOTE**: This project is currently in its earliest stage of development.
