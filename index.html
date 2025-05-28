@@ -31,7 +31,7 @@
     </script>
 
     <!-- Fragment shader program -->
-    <script id="shader-fs" type="x-shader/x-fragment">
+    <script id="packing-fs" type="x-shader/x-fragment">
         #version 300 es
         // precision mediump float;
         precision highp float;
@@ -67,11 +67,11 @@
     </script>
 
     <!-- Fragment shader program -->
-    <script id="shader-fs-plain" type="x-shader/x-fragment">
+    <script id="unpacking-fs" type="x-shader/x-fragment">
         #version 300 es
         // precision mediump float;
         precision highp float;
-        uniform sampler2D u_texture;
+        uniform sampler2D p_texture;
         out vec4 outColor;
 
         int iwidth = 8; // width of the pixel block, packed into 8 bits
@@ -85,13 +85,51 @@
             int x = (xyOrig.x - dx) / iwidth;
             int y = (xyOrig.y - dy) / iheight;
 
-            uint byte = uint( texelFetch(u_texture, ivec2(x,y), 0)[dy] * 255.0 );
+            uint byte = uint( texelFetch(p_texture, ivec2(x,y), 0)[dy] * 255.0 );
             uint bit = byte & (uint(1) << uint(dx));
             float val = float(bool(bit));
             outColor = vec4(val, val, val, 1.0);
         }
     </script>
 
+    <!-- Fragment shader program -->
+    <script id="comparison-fs" type="x-shader/x-fragment">
+        #version 300 es
+        precision highp float;
+
+        uniform sampler2D src_texture;
+        uniform sampler2D up_texture;
+        uniform float u_threshold;
+
+        out vec4 outColor;
+
+        void main() {
+            ivec2 texCoord = ivec2(gl_FragCoord.xy - 0.5);
+            vec4 color1 = texelFetch(src_texture, texCoord, 0);
+            vec4 color2 = texelFetch(up_texture, texCoord, 0);
+
+            if(all(lessThan(abs(color1 - color2), vec4(u_threshold)))) {
+                discard;
+            }
+
+            // Otherwise output difference, or something, doesn't matter
+            outColor = abs(color1 - color2);
+        }
+    </script>
+
+    <!-- Fragment shader program -->
+    <script id="copy-fs" type="x-shader/x-fragment">
+        #version 300 es
+        // precision mediump float;
+        precision highp float;
+        uniform sampler2D up_texture;
+        out vec4 outColor;
+
+        void main() {
+            ivec2 texCoord = ivec2(gl_FragCoord.xy - 0.5);
+            outColor = texelFetch(up_texture, texCoord, 0);
+        }
+    </script>
 
     <script>
 

@@ -258,11 +258,6 @@ export class ProcessingWEBGL {
       depth,
       packW = Math.ceil(width/8),
       packH = Math.ceil(height/4),
-      programs = [
-        {
-          vertexShaderId: "shader-vs",
-          fragmentShaderId: "shader-fs",
-          attrs: {
       /**
       *       V0              V1
               (0, 0)         (1, 0)
@@ -274,37 +269,63 @@ export class ProcessingWEBGL {
               (0, 1)         (1, 1)
               V3               V2
       */
-              a_position: new Float32Array([
+      texPosition = new Float32Array([
                             0, 0, // bottom-left
                             1, 0, // bottom-right
                             0,  1, // top-left
                             1,  1, // top-right
-                          ])
+                          ]),
+      texIndices = new Uint16Array([0, 1, 2, 2, 1, 3]), // indices of triangle corners
+      programs = [
+        { // 0 - packing
+          vertexShaderId: "shader-vs",
+          fragmentShaderId: "packing-fs",
+          attrs: {
+              a_position: texPosition
           },
-          vaoIndices: new Uint16Array([0, 1, 2, 2, 1, 3]), // indices of triangle corners
+          vaoIndices: texIndices,
           uniforms: {
             u_texture: 0
           }
         },
-        {
+        { // 1 - unpacking
           vertexShaderId: "shader-vs",
-          fragmentShaderId: "shader-fs-plain",
+          fragmentShaderId: "unpacking-fs",
           attrs: {
-              a_position: new Float32Array([
-                            -1, -1, // bottom-left
-                            1, -1,  // bottom-right
-                            -1,  1, // top-left
-                            1,  1,  // top-right
-                          ])
+              a_position: texPosition
           },
-          vaoIndices: new Uint16Array([0, 1, 2, 2, 1, 3]), // indices of triangle corners
+          vaoIndices: texIndices,
           uniforms: {
-            u_texture: 1
+            p_texture: 1
+          }
+        },
+        { // 2 - comparison
+          vertexShaderId: "shader-vs",
+          fragmentShaderId: "comparison-fs",
+          attrs: {
+              a_position: texPosition
+          },
+          vaoIndices: texIndices,
+          uniforms: {
+            src_texture: 0,
+            up_texture: 3,
+            u_threshold: 0.01
+          }
+        },
+        { // 3 - copy
+          vertexShaderId: "shader-vs",
+          fragmentShaderId: "copy-fs",
+          attrs: {
+              a_position: texPosition
+          },
+          vaoIndices: texIndices,
+          uniforms: {
+            up_texture: 3
           }
         }
       ],
       textureOptions = [
-        {
+        { // 0 - original image
           source: null,
           flip: true,
           mipmap: false,
@@ -318,7 +339,7 @@ export class ProcessingWEBGL {
               TEXTURE_MIN_FILTER: "NEAREST",
           }
         },
-        {
+        { // 1 - packed texture
           source: null,
           flip: false,
           mipmap: false,
@@ -332,21 +353,57 @@ export class ProcessingWEBGL {
               TEXTURE_MIN_FILTER: "NEAREST",
           }
         },
-        {
+        // Without proper filtering parameters, textures can be considered "incomplete" for framebuffer use
+        // The framebuffer might still report as complete, but the rendering won't work
+        // This is especially common when the default min filter expects mipmaps that don't exist
+        { // 2 - debugging framebuffer attachment
           source: null,
           flip: false,
           mipmap: false,
           width: packW,
           height: packH,
           depth,
-          isFloat: true,
-          params: {}
+          isFloat: true, // use RGBA32F for coordinates
+          params: {
+                  TEXTURE_MAG_FILTER: "NEAREST",
+                  TEXTURE_MIN_FILTER: "NEAREST",
+          }
+        },
+        { // 3 - unpacked texture
+          source: null,
+          flip: true,
+          mipmap: false,
+          width,
+          height,
+          depth,
+          params: {
+                  TEXTURE_MAG_FILTER: "NEAREST",
+                  TEXTURE_MIN_FILTER: "NEAREST",
+          }
+        },
+        { // 4 - occlusion framebuffer attachment for texture comparison
+          source: null,
+          flip: false,
+          mipmap: false,
+          width,
+          height,
+          depth,
+          params: {
+                  TEXTURE_MAG_FILTER: "NEAREST",
+                  TEXTURE_MIN_FILTER: "NEAREST",
+          }
         }
       ],
       framebuffers = {
         packing: [
             {attachmentSlot: 0, textureSlot: 1},
-            {attachmentSlot: 1, textureSlot: 2},
+            {attachmentSlot: 1, textureSlot: 2}, // coordinates
+          ],
+        unpacking: [
+            {attachmentSlot: 0, textureSlot: 3}
+          ],
+        occlusion: [
+            {attachmentSlot: 0, textureSlot: 4}
           ]
       }
   ) {
@@ -450,8 +507,10 @@ export class ProcessingWEBGL {
       const uVal = uniValues[uniName];
       if (Array.isArray(uVal) && uVal.length === 2) {
         this.gl.uniform2fv(this.progs[progSlot][uniName], uVal);
-      } else {
+      } else if (Number.isInteger(uVal)) {
         this.gl.uniform1i(this.progs[progSlot][uniName], uVal);
+      } else {
+        this.gl.uniform1f(this.progs[progSlot][uniName], uVal);
       }
     });
   }
@@ -505,7 +564,9 @@ export class ProcessingWEBGL {
   initFramebuffer(fbName) {
     let attachments = this.fbConfigs[fbName];
     console.log("initFramebuffer", fbName, attachments);
+
     this.framebuffers[fbName] = this.gl.createFramebuffer();
+    console.log("Created framebuffer", this.framebuffers[fbName]);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.framebuffers[fbName]);
 
     attachments.forEach( attachment => {
@@ -519,16 +580,13 @@ export class ProcessingWEBGL {
       );
     });
 
-    // if(this.renderbuffer){
-    //   gl.framebufferRenderbuffer(
-    //     gl.FRAMEBUFFER,
-    //     gl.DEPTH_ATTACHMENT,
-    //     gl.RENDERBUFFER,
-    //     this.renderbuffer
-    //   );
-    //   // this.initRenderbuffer(this.w, this.h);
-    // }
+    this.checkFramebufferStatus(fbName);
 
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+  }
+
+  checkFramebufferStatus(fbName) {
     const status = this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER);
     if (status !== this.gl.FRAMEBUFFER_COMPLETE) {
       console.error(`Framebuffer incomplete: ${status}`);
@@ -540,13 +598,10 @@ export class ProcessingWEBGL {
         36057: "FRAMEBUFFER_UNSUPPORTED",
         36061: "FRAMEBUFFER_INCOMPLETE_MULTISAMPLE"
       };
-      console.error(`Error: ${statusMap[status] || "Unknown error"}`);
+      console.error(`Framebuffer ${fbName} Error: ${statusMap[status] || "Unknown error"}`);
     } else {
-      console.log("Framebuffer is complete!");
+      console.log(`Framebuffer ${fbName} is complete!`);
     }
-
-    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
   }
 
   initRenderbuffer(width, height) {
@@ -556,6 +611,7 @@ export class ProcessingWEBGL {
   }
 
   draw(conf = {progSlot: 0}) {
+    console.log(`draw prog ${conf.progSlot}`);
     this.gl.bindVertexArray(this.buffers[conf.progSlot].vertsVAO); // repeat this on each draw()
     this.gl.drawElements(
         this.gl.TRIANGLES,
@@ -565,39 +621,94 @@ export class ProcessingWEBGL {
     );
   }
 
+  drawToFB(conf = {
+    fbId: "packing",
+    progSlot: 0,
+    w: this.packW,
+    h: this.packH,
+    debug: false
+  }) {
+    this.progs[conf.progSlot].useProgram();
+    // Adjust viewport for packed size
+    this.gl.viewport(0, 0, conf.w, conf.h);
+    // Bind the framebuffer to render into texture 1
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.framebuffers[conf.fbId]);
+
+    this.checkFramebufferStatus(conf.fbId);
+    // don't forget to set attachment slot 1 in config if you want to debug coordinates
+    let attachments = this.fbConfigs[conf.fbId].map(fb => this.gl.COLOR_ATTACHMENT0 + fb.attachmentSlot);
+    this.gl.drawBuffers(attachments);
+    this.draw(conf);
+    if(conf.debug) {
+      this.framebufferReads();
+    }
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+  }
+
   processAndDraw(pixelData) {
-    this.progs[0].useProgram();
     try{
       this.textures[0].update(pixelData);
     } catch (e) {
       console.error(e);
     }
-    // Adjust viewport for packed size
-    this.gl.viewport(0, 0, this.packW, this.packH);
 
-    if(this.framebuffers && this.framebuffers.packing){
-      // Bind the framebuffer to render into texture 1
-      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.framebuffers.packing);
-      let attachments = this.fbConfigs.packing.map(fb => this.gl.COLOR_ATTACHMENT0 + fb.attachmentSlot);
-      this.gl.drawBuffers(attachments);
-    }
+    this.drawToFB({   // draws to tex 1 and 2
+        fbId: "packing",
+        progSlot: 0,
+        w: this.packW,
+        h: this.packH,
+        debug: false
+      });
 
-    this.draw({progSlot: 0}); // Draw with shader-fs to framebuffer
-
-    if(this.framebuffers){
-      this.framebufferReads(pixelData);
-      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
-    }
-
-    this.progs[1].useProgram();
-    // this.gl.uniform1i(this.progs[1]["u_texture"], 0); // debug
     this.textures[1].activate();
+
+    this.drawToFB({  // draws to tex 3
+        fbId: "unpacking",
+        progSlot: 1,
+        w: this.w,
+        h: this.h,
+        debug: false
+      });
+
+    this.textures[3].activate();
+
+    this.progs[3].useProgram(); // copies unpacked texture to canvas
     this.gl.viewport(0, 0, this.w, this.h);
-    this.draw({progSlot: 1});
+    this.draw({progSlot: 3});
+
+    let occlusionQuery = this.gl.createQuery();
+    this.gl.beginQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE, occlusionQuery);
+    this.drawToFB({  // draws to tex 3
+        fbId: "occlusion",
+        progSlot: 2,
+        w: this.w,
+        h: this.h,
+        debug: false
+      });
+    this.gl.endQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
+
+    new Promise(resolve => {
+      const checkResult = () => {
+        if (this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT_AVAILABLE)) {
+          const anyDifferent = this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT);
+          resolve(anyDifferent);
+        } else {
+          setTimeout(checkResult, 5);
+        }
+      };
+      setTimeout(checkResult, 5);
+    }).then(different => {
+      if (different) {
+        console.log("Textures are different!");
+      } else {
+        console.log("Textures are identical!");
+      }
+    });
+
   }
 
 
-  framebufferReads(pixelData) {
+  framebufferReads() {
     const readBuffer = new Uint8Array(this.packW * this.packH * 4);
     this.gl.readBuffer(this.gl.COLOR_ATTACHMENT0);
     this.gl.readPixels(
@@ -609,7 +720,7 @@ export class ProcessingWEBGL {
         readBuffer
     );
     const coordBuffer = new Float32Array(this.packW * this.packH * 4);
-    this.gl.readBuffer(this.gl.COLOR_ATTACHMENT1); // don't forget to set attachment slot 1 in config
+    this.gl.readBuffer(this.gl.COLOR_ATTACHMENT1);
     this.gl.readPixels(
       0,
       0,
