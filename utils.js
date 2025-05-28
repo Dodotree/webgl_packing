@@ -296,7 +296,7 @@ export class ProcessingWEBGL {
           },
           vaoIndices: texIndices,
           uniforms: {
-            p_texture: 1
+            p_texture: 5
           }
         },
         { // 2 - comparison
@@ -307,8 +307,8 @@ export class ProcessingWEBGL {
           },
           vaoIndices: texIndices,
           uniforms: {
-            src_texture: 0,
-            up_texture: 3,
+            src_texture: 1,
+            p_texture: 5,
             u_threshold: 0.01
           }
         },
@@ -321,6 +321,17 @@ export class ProcessingWEBGL {
           vaoIndices: texIndices,
           uniforms: {
             up_texture: 3
+          }
+        },
+        { // 4 - processing
+          vertexShaderId: "shader-vs",
+          fragmentShaderId: "processing-fs",
+          attrs: {
+              a_position: texPosition
+          },
+          vaoIndices: texIndices,
+          uniforms: {
+            p_texture: 1
           }
         }
       ],
@@ -392,6 +403,20 @@ export class ProcessingWEBGL {
                   TEXTURE_MAG_FILTER: "NEAREST",
                   TEXTURE_MIN_FILTER: "NEAREST",
           }
+        },
+        { // 5 - packed processed texture
+          source: null,
+          flip: false,
+          mipmap: false,
+          width: packW,
+          height: packH,
+          depth,
+          params: {
+              TEXTURE_WRAP_T: "REPEAT",
+              TEXTURE_WRAP_S: "REPEAT",
+              TEXTURE_MAG_FILTER: "NEAREST",
+              TEXTURE_MIN_FILTER: "NEAREST",
+          }
         }
       ],
       framebuffers = {
@@ -404,6 +429,9 @@ export class ProcessingWEBGL {
           ],
         occlusion: [
             {attachmentSlot: 0, textureSlot: 4}
+          ],
+        processing: [
+            {attachmentSlot: 0, textureSlot: 5}
           ]
       }
   ) {
@@ -634,7 +662,10 @@ export class ProcessingWEBGL {
     // Bind the framebuffer to render into texture 1
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.framebuffers[conf.fbId]);
 
-    this.checkFramebufferStatus(conf.fbId);
+    if (conf.debug) {
+      this.checkFramebufferStatus(conf.fbId);
+    }
+
     // don't forget to set attachment slot 1 in config if you want to debug coordinates
     let attachments = this.fbConfigs[conf.fbId].map(fb => this.gl.COLOR_ATTACHMENT0 + fb.attachmentSlot);
     this.gl.drawBuffers(attachments);
@@ -662,6 +693,16 @@ export class ProcessingWEBGL {
 
     this.textures[1].activate();
 
+    this.drawToFB({   // draws to tex 5
+        fbId: "processing",
+        progSlot: 4,
+        w: this.packW,
+        h: this.packH,
+        debug: false
+      });
+
+    this.textures[5].activate();
+
     this.drawToFB({  // draws to tex 3
         fbId: "unpacking",
         progSlot: 1,
@@ -678,7 +719,7 @@ export class ProcessingWEBGL {
 
     let occlusionQuery = this.gl.createQuery();
     this.gl.beginQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE, occlusionQuery);
-    this.drawToFB({  // draws to tex 3
+    this.drawToFB({
         fbId: "occlusion",
         progSlot: 2,
         w: this.w,

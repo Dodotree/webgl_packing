@@ -67,6 +67,62 @@
     </script>
 
     <!-- Fragment shader program -->
+    <script id="processing-fs" type="x-shader/x-fragment">
+        #version 300 es
+        // precision mediump float;
+        precision highp float;
+        uniform sampler2D p_texture;
+        out vec4 outColor;
+
+        int iwidth = 8; // width of the pixel block, packed into 8 bits
+        int iheight = 4; // height of the pixel block, packed into RGBA channels
+        bool[60] data; // 32 bits and 28 bits of surrounding 1 pixel neighbors
+
+        void main() {
+
+            // fetch data block
+            ivec2 xy = ivec2(gl_FragCoord.xy - 0.5);
+            vec4 cell = texelFetch(p_texture, xy, 0) * 255.0;
+            vec4 cellL = texelFetch(p_texture, xy + ivec2(-1,0), 0) * 255.0;
+            vec4 cellR = texelFetch(p_texture, xy + ivec2(1,0), 0) * 255.0;
+            uint byteT = uint(texelFetch(p_texture, xy + ivec2(0,-1), 0)[iheight-1] * 255.0);
+            uint byteB = uint(texelFetch(p_texture, xy + ivec2(0,1), 0)[0] * 255.0);
+            for (int j = 0; j < iheight; j++) {
+                uint byte = uint(cell[j]);
+                for(int i = 0; i < iwidth; i++) {
+                    data[10*j+i+11] = bool(byte & (uint(1) << uint(i)));
+                }
+                data[10*(j+1)] = bool(uint(cellL[j]) & (uint(1) << uint(iwidth-1)) );
+                data[10*(j+1)+9] = bool(uint(cellR[j]) & (uint(1) << uint(0)) );
+            }
+            for(int i = 0; i < iwidth; i++) {
+                data[i+1] = bool(byteT & (uint(1) << uint(i)));
+                data[i+51] = bool(byteB & (uint(1) << uint(i)));
+            }
+            for(int j = 0; j < 2; j++) {
+                for(int i = 0; i < 2; i++) {
+                    uint byteCorner = uint(texelFetch(p_texture, xy + ivec2(2*i-1, 2*j-1), 0)[3*(1-j)] * 255.0);
+                    data[50*j+9*i] = bool(byteCorner & (uint(1) << uint((iwidth-1)*(1-i))));
+                }
+            }
+
+            // process main 32 bits and pack the result back into the pixel
+            vec4 bytes = vec4(0.0, 0.0, 0.0, 0.0);
+            for (int j = 0; j < iheight; j++) {
+                uint byteValue = uint(0);
+                for(int i = 0; i < iwidth; i++) {
+                    if (data[10*j+i+11]) {
+                        byteValue =  byteValue | (uint(1) << uint(i));
+                    }
+                }
+                bytes[j] = float(byteValue) / 255.0; // normalize to [0, 1] range
+            }
+
+            outColor = bytes;
+        }
+    </script>
+
+    <!-- Fragment shader program -->
     <script id="unpacking-fs" type="x-shader/x-fragment">
         #version 300 es
         // precision mediump float;
@@ -98,7 +154,7 @@
         precision highp float;
 
         uniform sampler2D src_texture;
-        uniform sampler2D up_texture;
+        uniform sampler2D p_texture;
         uniform float u_threshold;
 
         out vec4 outColor;
@@ -106,7 +162,7 @@
         void main() {
             ivec2 texCoord = ivec2(gl_FragCoord.xy - 0.5);
             vec4 color1 = texelFetch(src_texture, texCoord, 0);
-            vec4 color2 = texelFetch(up_texture, texCoord, 0);
+            vec4 color2 = texelFetch(p_texture, texCoord, 0);
 
             if(all(lessThan(abs(color1 - color2), vec4(u_threshold)))) {
                 discard;
@@ -132,6 +188,90 @@
     </script>
 
     <script>
+
+    // Simulated processing shader code
+    // For easier debugging of algorithm (not shader) related issues
+
+    let p_texture = [
+        [[255,255,255,255],[121,122,123,125],[5,6,7,8]],
+        [[32,32,32,32],[64,64,64,64],[168,168,168,168]],
+        [[232,232,232],[1,2,3,4],[100,100,100,100]],
+    ];
+    let data = new Array(60).fill(false);
+
+    function texelFetch(texture, coord, dd, level) {
+        console.log(`texelFetch: coord=${coord}, dd=${dd}`);
+        return texture[coord[1]+dd[1]][coord[0]+dd[0]];
+    }
+
+    function ivec2(x, y) {
+        return [x, y];
+    }
+    function float(value) {
+        return value;
+    }
+    function vec4(x, y, z, w) {
+        return [x, y, z, w];
+    }
+    function uint(value) {
+        return Math.floor(value);
+    }
+    function bool(value) {
+        return value !== 0;
+    }
+
+    let k255 = 1;
+
+    let iheight = 4;
+    let iwidth = 8;
+    let xy = [1,1];
+    let cell = texelFetch(p_texture, xy, [0,0], 0); // * k255;
+    console.log(`center cell ${cell}`);
+    let cellL = texelFetch(p_texture, xy, [-1,0], 0); // * k255;
+    console.log(`left cell ${cellL}`);
+    let cellR = texelFetch(p_texture, xy, [1,0], 0); // * k255;
+    console.log(`right cell ${cellR}`);
+    let byteT = uint(texelFetch(p_texture, xy, [0,-1], 0)[iheight-1] * k255);
+    console.log(`top byte ${byteT}`);
+    let byteB = uint(texelFetch(p_texture, xy, [0,1], 0)[0] * k255);
+    console.log(`bottom byte ${byteB}`);
+
+    for (let  j = 0; j < iheight; j++) {
+        let byte = uint(cell[j]);
+        for(let i = 0; i < iwidth; i++) {
+            data[10*(j+1)+i+1] = bool(byte & (uint(1) << uint(i)));
+        }
+        data[10*(j+1)] = bool(uint(cellL[j]) & (uint(1) << uint(iwidth-1)) );
+        data[10*(j+1)+9] = bool(uint(cellR[j]) & (uint(1) << uint(0)) );
+    }
+    for(let i = 0; i < iwidth; i++) {
+        data[i+1] = bool(byteT & (uint(1) << uint(i)));
+        data[i+51] = bool(byteB & (uint(1) << uint(i)));
+    }
+    for(let j = 0; j < 2; j++) {
+        for(let i = 0; i < 2; i++) {
+            let byteCorner = uint(texelFetch(p_texture, xy, ivec2(2*i-1, 2*j-1), 0)[3*(1-j)] * 255.0);
+            data[50*j+9*i] = bool(byteCorner & (uint(1) << uint((iwidth-1)*(1-i))));
+        }
+    }
+
+    // process main 32 bits and pack the result back into the pixel
+    let bytes = vec4(0.0, 0.0, 0.0, 0.0);
+    for (let j = 0; j < iheight; j++) {
+        let byteValue = uint(0);
+        for(let i = 0; i < iwidth; i++) {
+            if (data[10*(j+1)+i+1]) {
+                byteValue =  byteValue | (uint(1) << uint(i));
+            }
+        }
+        bytes[j] = float(byteValue) / k255;
+    }
+
+    console.log(`bytes ${bytes}`);
+
+
+
+
 
     // Store preloaded files
     const fileCache = {};
