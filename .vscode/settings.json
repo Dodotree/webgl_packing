@@ -1,8 +1,11 @@
 {
     "liveServer.settings.port": 5501,
     "cSpell.words": [
+        "DONT",
         "iheight",
         "iwidth",
-        "mediump"
+        "mediump",
+        "seld",
+        "sels"
     ]
 }

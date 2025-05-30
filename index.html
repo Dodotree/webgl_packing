@@ -107,8 +107,35 @@
         }
 
         bool getProcessedBit(bool[9] box) {
-            bool bitValue = box[4]; // center pixel
-            return bitValue;
+
+            // rotation 0°
+            // sel_4_1     sel_4_2     sel_4_3
+            // 0,0,1       0,0,1       0,2,0
+            // 2,0,1       2,0,1       2,0,1
+            // 0,0,1       0,2,0       0,0,1
+
+            // sel_4_1  0° rotation:
+            bool val0 = box[2];     // Hit at above_right (1, -1)
+            val0 =  val0 && (!box[3]);     // Miss at left (-1, 0)
+            val0 = val0 && box[5];     // Hit at right (1, 0)
+            val0 = val0 && box[8];     // Hit at below_right (1, 1)
+
+            // sel_4_2  0° rotation:
+            bool val1 = box[2];     // Hit at above_right (1, -1)
+            val1 =  val1 && (!box[3]);     // Miss at left (-1, 0)
+            val1 = val1 && box[5];     // Hit at right (1, 0)
+            val1 =  val1 && (!box[7]);     // Miss at below (0, 1)
+
+            // sel_4_3  0° rotation:
+            bool val2 =  (!box[1]);     // Miss at above (0, -1)
+            val2 =  val2 && (!box[3]);     // Miss at left (-1, 0)
+            val2 = val2 && box[5];     // Hit at right (1, 0)
+            val2 = val2 && box[8];     // Hit at below_right (1, 1)
+
+            bool val = val0 || val1 || val2;
+            val = box[4] && (!val); // box[4] - center pixel
+
+            return !val;
         }
 
 
@@ -122,10 +149,13 @@
                 uint byteValue = uint(0);
                 for(int i = 0; i < iwidth; i++) {
                     int cXY = 10*j + i; // corner XY index for (-1,-1) to (1,1) box
+
+                    // inversions due to Leptonica algorithm treating white as ink
+                    // so it thickens black and thins white (for thinning)
                     bool[9] box = bool[9](
-                        data[cXY], data[cXY+1], data[cXY+2],
-                        data[cXY+10], data[cXY+11], data[cXY+12],
-                        data[cXY+20], data[cXY+21], data[cXY+22]
+                        !data[cXY], !data[cXY+1], !data[cXY+2],
+                        !data[cXY+10], !data[cXY+11], !data[cXY+12],
+                        !data[cXY+20], !data[cXY+21], !data[cXY+22]
                     );
                     if (getProcessedBit(box)) {
                         byteValue =  byteValue | (uint(1) << uint(i));
