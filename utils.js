@@ -296,7 +296,7 @@ export class ProcessingWEBGL {
           },
           vaoIndices: texIndices,
           uniforms: {
-            p_texture: 5
+            p_texture: 1
           }
         },
         { // 2 - comparison
@@ -323,15 +323,48 @@ export class ProcessingWEBGL {
             up_texture: 3
           }
         },
-        { // 4 - processing
+        { // 4 - processing - 0
           vertexShaderId: "shader-vs",
-          fragmentShaderId: "processing-fs",
+          fragmentShaderId: "processing-fs-0",
           attrs: {
               a_position: texPosition
           },
           vaoIndices: texIndices,
           uniforms: {
             p_texture: 1
+          }
+        },
+        { // 5 - processing - 90
+          vertexShaderId: "shader-vs",
+          fragmentShaderId: "processing-fs-90",
+          attrs: {
+              a_position: texPosition
+          },
+          vaoIndices: texIndices,
+          uniforms: {
+            p_texture: 5
+          }
+        } ,
+        { // 6 - processing - 180
+          vertexShaderId: "shader-vs",
+          fragmentShaderId: "processing-fs-180",
+          attrs: {
+              a_position: texPosition
+          },
+          vaoIndices: texIndices,
+          uniforms: {
+            p_texture: 1
+          }
+        },
+        { // 7 - processing - 270
+          vertexShaderId: "shader-vs",
+          fragmentShaderId: "processing-fs-270",
+          attrs: {
+              a_position: texPosition
+          },
+          vaoIndices: texIndices,
+          uniforms: {
+            p_texture: 5
           }
         }
       ],
@@ -432,6 +465,9 @@ export class ProcessingWEBGL {
           ],
         processing: [
             {attachmentSlot: 0, textureSlot: 5}
+          ],
+        processing2: [
+            {attachmentSlot: 0, textureSlot: 1}
           ]
       }
   ) {
@@ -691,17 +727,78 @@ export class ProcessingWEBGL {
         debug: false
       });
 
-    this.textures[1].activate();
+    const maxCount = 5;
+    let count = 0;
+    let changesDetected = true;
 
-    this.drawToFB({   // draws to tex 5
-        fbId: "processing",
-        progSlot: 4,
-        w: this.packW,
-        h: this.packH,
-        debug: false
-      });
+    while (changesDetected && count < maxCount) {
+      console.log(`Processing iteration ${count} ${changesDetected ? 'with' : 'without'} changes`);
 
-    this.textures[5].activate();
+      this.textures[1].activate();
+
+      this.drawToFB({   // draws to tex 5
+          fbId: "processing",
+          progSlot: 4,
+          w: this.packW,
+          h: this.packH,
+          debug: false
+        });
+
+      this.textures[5].activate();
+
+      this.drawToFB({   // draws to tex 1
+          fbId: "processing2",
+          progSlot: 5,
+          w: this.packW,
+          h: this.packH,
+          debug: false
+        });
+
+      this.drawToFB({   // draws to tex 5
+          fbId: "processing",
+          progSlot: 6,
+          w: this.packW,
+          h: this.packH,
+          debug: false
+        });
+
+      this.drawToFB({   // draws to tex 1
+          fbId: "processing2",
+          progSlot: 7,
+          w: this.packW,
+          h: this.packH,
+          debug: false
+        });
+
+      this.textures[3].activate();
+
+      let occlusionQuery = this.gl.createQuery();
+      this.gl.beginQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE, occlusionQuery);
+      this.drawToFB({
+          fbId: "occlusion",
+          progSlot: 2,
+          w: this.packW,
+          h: this.packH,
+          debug: false
+        });
+      this.gl.endQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
+
+      new Promise(resolve => {
+        const checkResult = () => {
+          if (this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT_AVAILABLE)) {
+            const anyDifferent = this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT);
+            changesDetected &&= anyDifferent;
+            console.log(`Count ${count}, changes detected: ${changesDetected}`);
+            resolve(anyDifferent);
+          } else {
+            requestAnimationFrame(checkResult);
+          }
+        };
+        requestAnimationFrame(checkResult);
+      })
+
+      count++;
+    }
 
     this.drawToFB({  // draws to tex 3
         fbId: "unpacking",
@@ -711,41 +808,9 @@ export class ProcessingWEBGL {
         debug: false
       });
 
-    this.textures[3].activate();
-
     this.progs[3].useProgram(); // copies unpacked texture to canvas
     this.gl.viewport(0, 0, this.w, this.h);
     this.draw({progSlot: 3});
-
-    let occlusionQuery = this.gl.createQuery();
-    this.gl.beginQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE, occlusionQuery);
-    this.drawToFB({
-        fbId: "occlusion",
-        progSlot: 2,
-        w: this.w,
-        h: this.h,
-        debug: false
-      });
-    this.gl.endQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
-
-    new Promise(resolve => {
-      const checkResult = () => {
-        if (this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT_AVAILABLE)) {
-          const anyDifferent = this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT);
-          resolve(anyDifferent);
-        } else {
-          setTimeout(checkResult, 5);
-        }
-      };
-      setTimeout(checkResult, 5);
-    }).then(different => {
-      if (different) {
-        console.log("Textures are different!");
-      } else {
-        console.log("Textures are identical!");
-      }
-    });
-
   }
 
 
