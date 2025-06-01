@@ -483,6 +483,9 @@ export class ProcessingWEBGL {
     this.buffers = [];
     this.framebuffers = {};
 
+    this.mainProcess = this.mainProcess.bind(this);
+    this.unpack = this.unpack.bind(this);
+
     // Create canvas and get WebGL2 context
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -675,7 +678,7 @@ export class ProcessingWEBGL {
   }
 
   draw(conf = {progSlot: 0}) {
-    console.log(`draw prog ${conf.progSlot}`);
+    // console.log(`draw prog ${conf.progSlot}`);
     this.gl.bindVertexArray(this.buffers[conf.progSlot].vertsVAO); // repeat this on each draw()
     this.gl.drawElements(
         this.gl.TRIANGLES,
@@ -727,53 +730,80 @@ export class ProcessingWEBGL {
         debug: false
       });
 
-    const maxCount = 5;
-    let count = 0;
-    let changesDetected = true;
+    this.maxCount = 40;
+    this.count = 0;
+    this.query = this.gl.createQuery();
+    this.queryInProgress = false;
 
-    while (changesDetected && count < maxCount) {
-      console.log(`Processing iteration ${count} ${changesDetected ? 'with' : 'without'} changes`);
+    this.mainProcess();
+  }
 
-      this.textures[1].activate();
+  /** Documentation: "A query's result may or may not be made available
+   * when control returns to the user agent's event loop.
+   * It is not guaranteed that using a single setTimeout callback with a delay of 0,
+   * or a single requestAnimationFrame callback, will allow sufficient time
+   * for the WebGL implementation to supply the query's results".
+   *
+   * So instead of keeping it in a single while loop you have to break it into separate function
+   * with requestAnimationFrame to allow it register "return to the user agent's event loop"
+   * and thus allow to process the query. If you don't need the query to know where to stop,
+   * or if you can approximate it to ~ 5-6 frames, just use a single loop and avoid the query. */
+  mainProcess() {
+    console.log(`Processing iteration ${this.count}`);
 
-      this.drawToFB({   // draws to tex 5
-          fbId: "processing",
-          progSlot: 4,
-          w: this.packW,
-          h: this.packH,
-          debug: false
-        });
+    // It's most likely will be from about 2-6 frames before.
+    if (this.queryInProgress && this.gl.getQueryParameter(this.query, this.gl.QUERY_RESULT_AVAILABLE)) {
+      const anyDifferent = this.gl.getQueryParameter(this.query, this.gl.QUERY_RESULT);
+      console.log(`Count ${this.count}, changes detected: ${anyDifferent}`);
+      this.queryInProgress = false;
+      if (!anyDifferent || this.count >= this.maxCount) {
+        console.log("No changes detected, unpacking...");
+        this.unpack();
+        return;
+      }
+    }
 
-      this.textures[5].activate();
+    this.textures[1].activate();
 
-      this.drawToFB({   // draws to tex 1
-          fbId: "processing2",
-          progSlot: 5,
-          w: this.packW,
-          h: this.packH,
-          debug: false
-        });
+    this.drawToFB({   // draws to tex 5
+        fbId: "processing",
+        progSlot: 4,
+        w: this.packW,
+        h: this.packH,
+        debug: false
+      });
 
-      this.drawToFB({   // draws to tex 5
-          fbId: "processing",
-          progSlot: 6,
-          w: this.packW,
-          h: this.packH,
-          debug: false
-        });
+    this.textures[5].activate();
 
-      this.drawToFB({   // draws to tex 1
-          fbId: "processing2",
-          progSlot: 7,
-          w: this.packW,
-          h: this.packH,
-          debug: false
-        });
+    this.drawToFB({   // draws to tex 1
+        fbId: "processing2",
+        progSlot: 5,
+        w: this.packW,
+        h: this.packH,
+        debug: false
+      });
 
-      this.textures[3].activate();
+    this.drawToFB({   // draws to tex 5
+        fbId: "processing",
+        progSlot: 6,
+        w: this.packW,
+        h: this.packH,
+        debug: false
+      });
 
-      let occlusionQuery = this.gl.createQuery();
-      this.gl.beginQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE, occlusionQuery);
+    this.drawToFB({   // draws to tex 1
+        fbId: "processing2",
+        progSlot: 7,
+        w: this.packW,
+        h: this.packH,
+        debug: false
+      });
+
+    this.textures[3].activate();
+
+
+    if (!this.queryInProgress) {
+      this.gl.beginQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE, this.query);
       this.drawToFB({
           fbId: "occlusion",
           progSlot: 2,
@@ -782,24 +812,21 @@ export class ProcessingWEBGL {
           debug: false
         });
       this.gl.endQuery(this.gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
-
-      new Promise(resolve => {
-        const checkResult = () => {
-          if (this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT_AVAILABLE)) {
-            const anyDifferent = this.gl.getQueryParameter(occlusionQuery, this.gl.QUERY_RESULT);
-            changesDetected &&= anyDifferent;
-            console.log(`Count ${count}, changes detected: ${changesDetected}`);
-            resolve(anyDifferent);
-          } else {
-            requestAnimationFrame(checkResult);
-          }
-        };
-        requestAnimationFrame(checkResult);
-      })
-
-      count++;
+      this.queryInProgress = true;
     }
 
+    this.count++;
+
+    if (this.count < this.maxCount) {
+      requestAnimationFrame(this.mainProcess);
+    }else{
+      console.log("Max count reached, unpacking...");
+      this.unpack();
+    }
+  }
+
+
+  unpack() {
     this.drawToFB({  // draws to tex 3
         fbId: "unpacking",
         progSlot: 1,
