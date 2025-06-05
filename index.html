@@ -460,7 +460,8 @@
                 for(int i = 0; i < iwidth; i++) {
                     int cXY = 10*j + i; // corner XY index for (-1,-1) to (1,1) box
 
-                    // inversions due to Leptonica algorithm treating white as ink
+                    // inversions due to Leptonica internal binary treating 1 as ink
+                    // Leptonica converts < 60 to 1(ink) and >= 60 to 0(background)
                     // so it thickens black and thins white (for thinning)
                     bool[9] box = bool[9](
                         !data[cXY], !data[cXY+1], !data[cXY+2],
@@ -552,8 +553,8 @@
 
     let p_texture = [
         [[255,255,255,255],[121,122,123,125],[5,6,7,8]],
-        [[32,32,32,32],[64,64,64,64],[168,168,168,168]],
-        [[232,232,232],[1,2,3,4],[100,100,100,100]],
+        [[32,32,32,32],[61,62,63,64],[168,168,168,168]],
+        [[232,232,232,233],[1,2,3,4],[100,100,100,100]],
     ];
     let data = new Array(60).fill(false);
 
@@ -594,6 +595,8 @@
     let byteB = uint(texelFetch(p_texture, xy, [0,1], 0)[0] * k255);
     console.log(`bottom byte ${byteB}`);
 
+    // fill data block with 60 bits
+    // 32 bits of main pixel, 28 bits of surrounding pixels of 1 pixel border
     for (let  j = 0; j < iheight; j++) {
         let byte = uint(cell[j]);
         for(let i = 0; i < iwidth; i++) {
@@ -608,7 +611,7 @@
     }
     for(let j = 0; j < 2; j++) {
         for(let i = 0; i < 2; i++) {
-            let byteCorner = uint(texelFetch(p_texture, xy, ivec2(2*i-1, 2*j-1), 0)[3*(1-j)] * 255.0);
+            let byteCorner = uint(texelFetch(p_texture, xy, ivec2(2*i-1, 2*j-1), 0)[3*(1-j)] * k255);
             data[50*j+9*i] = bool(byteCorner & (uint(1) << uint((iwidth-1)*(1-i))));
         }
     }
@@ -628,7 +631,47 @@
     console.log(`bytes ${bytes}`);
 
 
+    // Alternative way of direct calculation from RGBAs placed into 36 data block
+    // 12 rows of 3 bytes each glued into 24bit integer
 
+    const block2 = new Array(12).fill(0);
+    for(let j=0; j < 3; j++) {
+        for(let i=0; i < 3; i++) {
+            for(let cj=0; cj < 4; cj++) {
+                block2[4*j+cj]= (p_texture[j][i][cj] << (8 *i)) | block2[4*j+cj];
+            }
+        }
+    }
+    console.log(block2);
+    for(let i=0; i < 12; i++) {
+        const ln  = [];
+        for(let li=0; li < 24; li++) {
+            ln.push( Number(bool((block2[i] & (1 << li)))) );
+        }
+        console.log(`  ${ln.join(' ')} `);
+    }
+
+    allMatch = true;
+    for(let j=-1; j<5; j++) {
+        for(let i=-1; i<9; i++) {
+            let dot = 24*j + i + 104;
+            let dataVal = data[10*(j+1)+i+1];
+
+            let jj = 4 + j;
+            let ii = 8 + i;
+            let blockVal = bool( uint(block2[jj]) & (uint(1) << uint(ii)) );
+
+            if (dataVal !== blockVal) {
+                console.log(`Mismatch at (${i}, ${j}): data=${dataVal}, block=${blockVal}`);
+                allMatch = false;
+            }
+        }
+    }
+    if (allMatch) {
+        console.log("Data block matches the expected values.");
+    } else {
+        console.log("Data block does not match the expected values.");
+    }
 
 
     // Store preloaded files

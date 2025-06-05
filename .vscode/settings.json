@@ -1,11 +1,32 @@
 {
     "liveServer.settings.port": 5501,
     "cSpell.words": [
+        "bgval",
         "DONT",
+        "filltype",
         "iheight",
         "iwidth",
         "mediump",
+        "mincount",
+        "pixb",
+        "pixd",
+        "pixf",
+        "pixg",
+        "pixim",
+        "pixm",
+        "pixmb",
+        "pixmbi",
+        "pixmg",
+        "pixmgi",
+        "pixmi",
+        "pixmr",
+        "pixmri",
+        "pixs",
         "seld",
-        "sels"
+        "sels",
+        "smoothx",
+        "valtest",
+        "xres",
+        "yres"
     ]
 }
